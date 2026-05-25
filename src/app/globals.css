@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background: #090E14;
+  color: #D0D8E0;
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #090E14; }
+::-webkit-scrollbar-thumb { background: #253040; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6B7F92; }
+
+select option { background: #1A2530; color: #D0D8E0; }
+input::placeholder { color: #6B7F92; opacity: 0.6; }
