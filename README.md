@@ -1,27 +1,28 @@
-# ChemSeg Analyst — V12
+# ⚗️ ChemSeg V17 — Chemical Import/Export Segmentation Tool
 
-Chemical Import/Export Segmentation & Price Analysis Tool.
+Internal analyst tool for multi-year chemical import/export data processing.
 
 ## Features
-- Multi-year workbook processing (each year = separate sheet)
-- Company Entity Resolution Engine (VN/EN legal suffixes, fused suffix detection, dedup)
-- Numeric Backfill Engine (recovers missing Unit Price / Total Value / Quantity)
-- Granular Data Quality (Missing, Zero, Negative, Invalid, Text Placeholder, Backfilled, Unrecoverable)
-- Industry Master matching (4-column upload)
-- Segment-specific keyword dictionaries (columnar Excel import)
-- Unit conversion to Metric Tons (TNE, KGM, GRM, LBS, TONNE)
-- IQR outlier detection per year per segment
-- Full Excel export with Before/After outlier sheets + audit logs
-
-## Deploy on Vercel
-1. Push this repo to GitHub
-2. Go to [vercel.com/new](https://vercel.com/new)
-3. Import the GitHub repo
-4. Click **Deploy** — no config needed
+- 14-step processing pipeline (Upload → Export)
+- Company entity resolution with Vietnamese-English alias detection
+- Top 80% purchaser ranking with placeholder exclusion (V16)
+- Enhanced entity standardization with risk flags (V17)
+- IQR outlier detection per Year + Segment
+- Full audit workbook export
 
 ## Local Development
+
 ```bash
 npm install
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000)
+
+Open http://localhost:5173
+
+## Build for Production
+
+```bash
+npm run build
+```
+
+Output in `dist/` folder.
