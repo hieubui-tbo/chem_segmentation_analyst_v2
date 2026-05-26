@@ -1240,109 +1240,136 @@ export default function ChemicalSegmentationTool() {
   /* ════════════════════════════════════
      STEP 13 — EXPORT
      ════════════════════════════════════ */
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
+    const yield_ = () => new Promise(r => setTimeout(r, 0));
+    const today = new Date().toISOString().slice(0,10);
     setProcessing(true);
-    setTimeout(() => {
-      try {
-        const wb = XLSX.utils.book_new();
-        // 00_Summary (V17: includes company research summary)
-        const sum = yearSheets.map(yr => ({
-          Year: yr, Total_Rows: sheetData[yr].length,
-          Backfilled: backfillLog?.[yr]?.backfilled||0, Value_Flagged: validationLog?.[yr]?.flagged||0,
-          Supplier_Groups: entityLog?.[yr]?.suppGroups||0, Purchaser_Groups: entityLog?.[yr]?.purchGroups||0,
-          Purchaser_Global_Top80: rankingData?.[yr]?.purch_all?.top80?.length||0,
-          Purchaser_Vietnam_Top80: rankingData?.[yr]?.purch_vn?.top80?.length||0,
-          Supplier_Global_Top80: rankingData?.[yr]?.supp_all?.top80?.length||0,
-          Purchaser_Global_Scope_Value: rankingData?.[yr]?.purch_all?.scopeTotal||0,
-          Industry_Matched: industryLog?.[yr]?.matched||0,
-          Classified_KW: classificationLog?.[yr]?.byKeyword||0, Classified_Ind: classificationLog?.[yr]?.byIndustry||0,
-          Unclassified: classificationLog?.[yr]?.unclassified||0, Units_Converted: conversionLog?.[yr]?.converted||0,
-        }));
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sum), "00_Summary");
+    await yield_();
+    try {
+      /* ── FILE 1: Audit Report (summary sheets) ── */
+      const wb1 = XLSX.utils.book_new();
 
-        // Data Quality
-        if (qualityReport) {
-          const dq = [];
-          yearSheets.forEach(yr => { const q=qualityReport[yr]; if(!q) return;
-            Object.entries(q.numeric).forEach(([f,v]) => dq.push({Year:yr,Field:f,...v}));
-          });
-          if (dq.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dq), "DataQuality_Summary");
-        }
-        // Backfill Log
-        const bf = [];
-        yearSheets.forEach(yr => sheetData[yr].forEach((r,i) => { if (r._backfill) bf.push({Year:yr,Row:i+2,Backfilled:r._backfill}); }));
-        if (bf.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bf), "Backfill_Log");
+      // 00_Summary
+      const sum = yearSheets.map(yr => ({
+        Year: yr, Total_Rows: sheetData[yr].length,
+        Backfilled: backfillLog?.[yr]?.backfilled||0, Value_Flagged: validationLog?.[yr]?.flagged||0,
+        Supplier_Groups: entityLog?.[yr]?.suppGroups||0, Purchaser_Groups: entityLog?.[yr]?.purchGroups||0,
+        Purchaser_Global_Top80: rankingData?.[yr]?.purch_all?.top80?.length||0,
+        Purchaser_Vietnam_Top80: rankingData?.[yr]?.purch_vn?.top80?.length||0,
+        Supplier_Global_Top80: rankingData?.[yr]?.supp_all?.top80?.length||0,
+        Purchaser_Global_Scope_Value: rankingData?.[yr]?.purch_all?.scopeTotal||0,
+        Industry_Matched: industryLog?.[yr]?.matched||0,
+        Classified_KW: classificationLog?.[yr]?.byKeyword||0, Classified_Ind: classificationLog?.[yr]?.byIndustry||0,
+        Unclassified: classificationLog?.[yr]?.unclassified||0, Units_Converted: conversionLog?.[yr]?.converted||0,
+      }));
+      XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(sum), "00_Summary");
+      await yield_();
 
-        // Entity Resolution Log (V17: detailed with review items)
-        if (entityLog) {
-          const el = yearSheets.map(yr => ({
-            Year: yr, Supplier_Groups: entityLog[yr]?.suppGroups, Purchaser_Groups: entityLog[yr]?.purchGroups,
-            Total_Rows: entityLog[yr]?.total,
-            Supplier_Needs_Review: entityLog[yr]?.suppReview, Purchaser_Needs_Review: entityLog[yr]?.purchReview,
-            Supplier_Placeholders: entityLog[yr]?.suppPlh, Purchaser_Placeholders: entityLog[yr]?.purchPlh,
-          }));
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(el), "Entity_Log");
-          // Entity review items
-          const reviewRows = [];
-          yearSheets.forEach(yr => {
-            const samples = entityLog[yr]?.riskSamples || [];
-            samples.forEach(s => reviewRows.push({ Year: yr, ...s }));
-          });
-          if (reviewRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reviewRows), "Entity_Review");
-        }
-        // Purchaser Research Scope (V17)
-        if (rankingData) {
-          yearSheets.forEach(yr => {
-            const rd=rankingData[yr]; if(!rd || !rd.purch_all) return;
-            const sc = rd.purch_all.top80.map(p => ({
-              Year:yr, Raw_Names:[...p.raws].slice(0,5).join("; "), Purchaser_Std:p.std, Country:p.country,
-              Continent: p.continent, Is_Southeast_Asia: p.isSEA,
-              Purchaser_Ranking_Value_Year: p.value,
-              Valid_Year_Ranking_Value_Total: rd.purch_all.scopeTotal,
-              Purchaser_Value_Share: p.share, Cumulative_Value_Share: p.cumShare,
-              Purchaser_Value_Rank: p.rank, Top80_Research_Flag: "Yes",
-            }));
-            if (sc.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sc), safeSheetName("Scope_"+yr));
-          });
-        }
-        // Industry Matching Log
-        if (industryLog) {
-          const il = yearSheets.map(yr => ({Year:yr, ...industryLog[yr]}));
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(il), "Industry_Match_Log");
-        }
-        // IQR Summary
-        if (iqrResults) {
-          const iq = [];
-          yearSheets.forEach(yr => { const ir=iqrResults[yr]; if(!ir) return;
-            Object.entries(ir).forEach(([seg,v]) => iq.push({Year:yr,Segment:seg,...v})); });
-          if (iq.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(iq), "IQR_Summary");
-        }
-        // Segment Metrics
-        if (segmentMetrics) {
-          const sm = [];
-          yearSheets.forEach(yr => { const s=segmentMetrics[yr]; if(!s) return;
-            Object.entries(s).forEach(([seg,v]) => sm.push({
-              Year:yr, Segment:seg, B_TV:v.before.sumTV, B_QtyMT:v.before.sumQty, B_AvgP:v.before.avgPrice, B_N:v.before.count,
-              A_TV:v.after.sumTV, A_QtyMT:v.after.sumQty, A_AvgP:v.after.avgPrice, A_N:v.after.count,
-            })); });
-          if (sm.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sm), "Segment_Metrics");
-        }
-        // Keyword Conflicts
-        if (keywordConflicts.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(keywordConflicts), "Keyword_Conflicts");
-
-        // Per-year Before/After
-        yearSheets.forEach(yr => {
-          const rows = sheetData[yr];
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr+"_Before"));
-          const after = rows.filter(r => !(r.Pre_Conversion_Value_Check==="Outlier" && r.IQR_Segment_Check==="IQR Outlier"));
-          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(after), safeSheetName(yr+"_After"));
+      // Data Quality
+      if (qualityReport) {
+        const dq = [];
+        yearSheets.forEach(yr => { const q=qualityReport[yr]; if(!q) return;
+          Object.entries(q.numeric).forEach(([f,v]) => dq.push({Year:yr,Field:f,...v}));
         });
+        if (dq.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(dq), "DataQuality_Summary");
+        await yield_();
+      }
 
-        triggerDownload(XLSX.write(wb, { bookType:"xlsx", type:"array" }), "ChemSeg_Output_"+new Date().toISOString().slice(0,10)+".xlsx");
-        setExportDone(true);
-      } catch (err) { alert("Export error: " + err.message); }
-      setProcessing(false);
-    }, 100);
+      // Backfill Log
+      const bf = [];
+      yearSheets.forEach(yr => sheetData[yr].forEach((r,i) => { if (r._backfill) bf.push({Year:yr,Row:i+2,Backfilled:r._backfill}); }));
+      if (bf.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(bf), "Backfill_Log");
+      await yield_();
+
+      // Entity Resolution Log
+      if (entityLog) {
+        const el = yearSheets.map(yr => ({
+          Year: yr, Supplier_Groups: entityLog[yr]?.suppGroups, Purchaser_Groups: entityLog[yr]?.purchGroups,
+          Total_Rows: entityLog[yr]?.total,
+          Supplier_Needs_Review: entityLog[yr]?.suppReview, Purchaser_Needs_Review: entityLog[yr]?.purchReview,
+          Supplier_Placeholders: entityLog[yr]?.suppPlh, Purchaser_Placeholders: entityLog[yr]?.purchPlh,
+        }));
+        XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(el), "Entity_Log");
+        await yield_();
+        const reviewRows = [];
+        yearSheets.forEach(yr => {
+          const samples = entityLog[yr]?.riskSamples || [];
+          samples.forEach(s => reviewRows.push({ Year: yr, ...s }));
+        });
+        if (reviewRows.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(reviewRows), "Entity_Review");
+        await yield_();
+      }
+
+      // Purchaser Research Scope
+      if (rankingData) {
+        for (const yr of yearSheets) {
+          const rd=rankingData[yr]; if(!rd || !rd.purch_all) continue;
+          const sc = rd.purch_all.top80.map(p => ({
+            Year:yr, Raw_Names:[...p.raws].slice(0,5).join("; "), Purchaser_Std:p.std, Country:p.country,
+            Continent: p.continent, Is_Southeast_Asia: p.isSEA,
+            Purchaser_Ranking_Value_Year: p.value,
+            Valid_Year_Ranking_Value_Total: rd.purch_all.scopeTotal,
+            Purchaser_Value_Share: p.share, Cumulative_Value_Share: p.cumShare,
+            Purchaser_Value_Rank: p.rank, Top80_Research_Flag: "Yes",
+          }));
+          if (sc.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(sc), safeSheetName("Scope_"+yr));
+          await yield_();
+        }
+      }
+
+      // Industry Matching Log
+      if (industryLog) {
+        const il = yearSheets.map(yr => ({Year:yr, ...industryLog[yr]}));
+        XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(il), "Industry_Match_Log");
+        await yield_();
+      }
+
+      // IQR Summary
+      if (iqrResults) {
+        const iq = [];
+        yearSheets.forEach(yr => { const ir=iqrResults[yr]; if(!ir) return;
+          Object.entries(ir).forEach(([seg,v]) => iq.push({Year:yr,Segment:seg,...v})); });
+        if (iq.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(iq), "IQR_Summary");
+        await yield_();
+      }
+
+      // Segment Metrics
+      if (segmentMetrics) {
+        const sm = [];
+        yearSheets.forEach(yr => { const s=segmentMetrics[yr]; if(!s) return;
+          Object.entries(s).forEach(([seg,v]) => sm.push({
+            Year:yr, Segment:seg, B_TV:v.before.sumTV, B_QtyMT:v.before.sumQty, B_AvgP:v.before.avgPrice, B_N:v.before.count,
+            A_TV:v.after.sumTV, A_QtyMT:v.after.sumQty, A_AvgP:v.after.avgPrice, A_N:v.after.count,
+          })); });
+        if (sm.length) XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(sm), "Segment_Metrics");
+        await yield_();
+      }
+
+      // Keyword Conflicts
+      if (keywordConflicts.length) {
+        XLSX.utils.book_append_sheet(wb1, XLSX.utils.json_to_sheet(keywordConflicts), "Keyword_Conflicts");
+        await yield_();
+      }
+
+      // Download File 1
+      triggerDownload(XLSX.write(wb1, { bookType:"xlsx", type:"array" }), "ChemSeg_AuditReport_"+today+".xlsx");
+      await new Promise(r => setTimeout(r, 500)); // pause between downloads
+
+      /* ── FILE 2: Raw Data (Before/After per year) ── */
+      const wb2 = XLSX.utils.book_new();
+      for (const yr of yearSheets) {
+        const rows = sheetData[yr];
+        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), safeSheetName(yr+"_Before"));
+        await yield_();
+        const after = rows.filter(r => !(r.Pre_Conversion_Value_Check==="Outlier" && r.IQR_Segment_Check==="IQR Outlier"));
+        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(after), safeSheetName(yr+"_After"));
+        await yield_();
+      }
+      triggerDownload(XLSX.write(wb2, { bookType:"xlsx", type:"array" }), "ChemSeg_RawData_"+today+".xlsx");
+
+      setExportDone(true);
+    } catch (err) { alert("Export error: " + err.message); }
+    setProcessing(false);
   }, [yearSheets, sheetData, qualityReport, backfillLog, validationLog, entityLog, rankingData, industryLog, classificationLog, conversionLog, iqrResults, segmentMetrics, keywordConflicts]);
 
 
