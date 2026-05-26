@@ -11,7 +11,7 @@ const STEPS = [
   { id: "backfill", label: "Numeric Backfill",  icon: "🔧" },
   { id: "validate", label: "Value Validation",  icon: "✅" },
   { id: "entity",   label: "Entity Resolution", icon: "🏢" },
-  { id: "ranking",  label: "Top 80% Ranking",   icon: "📊" },
+  { id: "ranking",  label: "Company Research",  icon: "📊" },
   { id: "industry", label: "Industry Master",   icon: "🏭" },
   { id: "keywords", label: "Keyword Matrix",    icon: "🔑" },
   { id: "classify", label: "Classification",    icon: "🏷️" },
@@ -35,6 +35,72 @@ const DEFAULT_PLACEHOLDERS = [
   "TO THE ORDER OF", "TO ORDER", "NO DATA", "NULL", "NOT APPLICABLE",
   "NOT AVAILABLE", "UNIDENTIFIED", "UNSPECIFIED", "TBD", "TBC",
 ];
+
+// V17: Country → Region mapping
+const SEA_SET = new Set(["BRUNEI","CAMBODIA","INDONESIA","LAOS","MALAYSIA","MYANMAR","PHILIPPINES","SINGAPORE","THAILAND","TIMOR-LESTE","VIETNAM"]);
+const _REGION_RAW = {
+  Asia: "Afghanistan,Armenia,Azerbaijan,Bahrain,Bangladesh,Bhutan,Brunei,Cambodia,China,Cyprus,Georgia,Hong Kong,India,Indonesia,Iran,Iraq,Israel,Japan,Jordan,Kazakhstan,Kuwait,Kyrgyzstan,Laos,Lebanon,Macau,Malaysia,Maldives,Mongolia,Myanmar,Nepal,North Korea,Oman,Pakistan,Palestine,Philippines,Qatar,Saudi Arabia,Singapore,South Korea,Sri Lanka,Syria,Taiwan,Tajikistan,Thailand,Timor-Leste,Turkey,Turkmenistan,United Arab Emirates,Uzbekistan,Vietnam,Yemen",
+  America: "Antigua And Barbuda,Argentina,Bahamas,Barbados,Belize,Bolivia,Brazil,Canada,Chile,Colombia,Costa Rica,Cuba,Dominica,Dominican Republic,Ecuador,El Salvador,Grenada,Guatemala,Guyana,Haiti,Honduras,Jamaica,Mexico,Nicaragua,Panama,Paraguay,Peru,Puerto Rico,Saint Kitts And Nevis,Saint Lucia,Saint Vincent And The Grenadines,Suriname,Trinidad And Tobago,United States,Uruguay,Venezuela,Bermuda,Greenland,Cayman Islands",
+  Africa: "Algeria,Angola,Benin,Botswana,Burkina Faso,Burundi,Cabo Verde,Cameroon,Central African Republic,Chad,Comoros,Congo,Cote D Ivoire,Democratic Republic Of The Congo,Djibouti,Egypt,Equatorial Guinea,Eritrea,Eswatini,Ethiopia,Gabon,Gambia,Ghana,Guinea,Guinea-Bissau,Kenya,Lesotho,Liberia,Libya,Madagascar,Malawi,Mali,Mauritania,Mauritius,Morocco,Mozambique,Namibia,Niger,Nigeria,Rwanda,Senegal,Seychelles,Sierra Leone,Somalia,South Africa,South Sudan,Sudan,Tanzania,Togo,Tunisia,Uganda,Zambia,Zimbabwe",
+  Europe: "Albania,Andorra,Austria,Belarus,Belgium,Bosnia And Herzegovina,Bulgaria,Croatia,Czech Republic,Denmark,Estonia,Finland,France,Germany,Greece,Hungary,Iceland,Ireland,Italy,Kosovo,Latvia,Liechtenstein,Lithuania,Luxembourg,Malta,Moldova,Monaco,Montenegro,Netherlands,North Macedonia,Norway,Poland,Portugal,Romania,Russia,San Marino,Serbia,Slovakia,Slovenia,Spain,Sweden,Switzerland,Ukraine,United Kingdom,Vatican City,Gibraltar",
+  Oceania: "Australia,Fiji,Kiribati,Marshall Islands,Micronesia,Nauru,New Zealand,Palau,Papua New Guinea,Samoa,Solomon Islands,Tonga,Tuvalu,Vanuatu,Guam,New Caledonia,French Polynesia",
+};
+const COUNTRY_ALIASES = {
+  "USA":"UNITED STATES","UNITED STATES OF AMERICA":"UNITED STATES","US":"UNITED STATES","U.S.":"UNITED STATES","U.S.A.":"UNITED STATES",
+  "UK":"UNITED KINGDOM","GREAT BRITAIN":"UNITED KINGDOM","ENGLAND":"UNITED KINGDOM","BRITAIN":"UNITED KINGDOM",
+  "UAE":"UNITED ARAB EMIRATES","U.A.E.":"UNITED ARAB EMIRATES",
+  "VN":"VIETNAM","VIET NAM":"VIETNAM","VIỆT NAM":"VIETNAM",
+  "LAO PDR":"LAOS","LAO":"LAOS","LAO PEOPLES DEMOCRATIC REPUBLIC":"LAOS",
+  "BURMA":"MYANMAR","EAST TIMOR":"TIMOR-LESTE","CAPE VERDE":"CABO VERDE",
+  "IVORY COAST":"COTE D IVOIRE","COTE DIVOIRE":"COTE D IVOIRE","CÔTE D'IVOIRE":"COTE D IVOIRE",
+  "DR CONGO":"DEMOCRATIC REPUBLIC OF THE CONGO","DRC":"DEMOCRATIC REPUBLIC OF THE CONGO",
+  "REPUBLIC OF THE CONGO":"CONGO","SWAZILAND":"ESWATINI","CZECHIA":"CZECH REPUBLIC",
+  "RUSSIAN FEDERATION":"RUSSIA","RUSSIAN FED":"RUSSIA","RUSSIAN FED.":"RUSSIA",
+  "REPUBLIC OF KOREA":"SOUTH KOREA","KOREA":"SOUTH KOREA","KOREA SOUTH":"SOUTH KOREA","SOUTH KOREA":"SOUTH KOREA","KOREA REPUBLIC":"SOUTH KOREA",
+  "DPRK":"NORTH KOREA","KOREA NORTH":"NORTH KOREA",
+  "PEOPLES REPUBLIC OF CHINA":"CHINA","PRC":"CHINA","CHINA PR":"CHINA","CHINA MAINLAND":"CHINA",
+  "HONG KONG SAR":"HONG KONG","HK":"HONG KONG",
+  "CHINESE TAIPEI":"TAIWAN","TAIWAN ROC":"TAIWAN",
+  "HOLLAND":"NETHERLANDS","THE NETHERLANDS":"NETHERLANDS",
+  "PAPUA N GUINEA":"PAPUA NEW GUINEA","PNG":"PAPUA NEW GUINEA",
+  "TRINIDAD":"TRINIDAD AND TOBAGO","T&T":"TRINIDAD AND TOBAGO",
+  "SÃO TOMÉ AND PRÍNCIPE":"SAO TOME AND PRINCIPE",
+};
+// Build lookup once
+const _COUNTRY_LOOKUP = {};
+Object.entries(_REGION_RAW).forEach(([cont, csv]) => {
+  csv.split(",").forEach(c => { _COUNTRY_LOOKUP[c.trim().toUpperCase()] = cont; });
+});
+Object.entries(COUNTRY_ALIASES).forEach(([alias, canon]) => {
+  if (!_COUNTRY_LOOKUP[alias.toUpperCase()]) _COUNTRY_LOOKUP[alias.toUpperCase()] = _COUNTRY_LOOKUP[canon.toUpperCase()] || "Unknown";
+});
+
+function mapCountryToRegion(rawCountry) {
+  if (!rawCountry || !String(rawCountry).trim()) return { continent: "Unknown", isSEA: false, status: "Blank" };
+  let c = String(rawCountry).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  c = c.replace(/[.,;:'"()\-\/\\]+/g, " ").replace(/\s+/g, " ").trim();
+  // Direct lookup
+  let cont = _COUNTRY_LOOKUP[c];
+  if (!cont) {
+    // Try alias
+    const alias = COUNTRY_ALIASES[c];
+    if (alias) cont = _COUNTRY_LOOKUP[alias.toUpperCase()];
+  }
+  if (!cont) {
+    // Fuzzy: check if any key is contained in c or c is contained in key
+    for (const [k, v] of Object.entries(_COUNTRY_LOOKUP)) {
+      if (c.includes(k) || k.includes(c)) { cont = v; break; }
+    }
+  }
+  if (!cont) return { continent: "Unknown", isSEA: false, status: "Unmapped" };
+  // Check SEA
+  const canonical = Object.entries(_COUNTRY_LOOKUP).find(([k,v]) => v === cont && SEA_SET.has(k))?.[0];
+  const isSEA = SEA_SET.has(c) || (canonical && SEA_SET.has(canonical)) || false;
+  // Better SEA check: normalize and check against all SEA names
+  let seaCheck = false;
+  for (const s of SEA_SET) { if (c.includes(s) || s.includes(c)) { seaCheck = true; break; } }
+  return { continent: cont, isSEA: seaCheck || isSEA, status: "Mapped" };
+}
 
 // ─── ENTITY RESOLUTION ENGINE (V17 Enhanced) ───
 
@@ -515,8 +581,9 @@ export default function ChemicalSegmentationTool() {
 
   const [processing, setProcessing] = useState(false);
   const [exportDone, setExportDone] = useState(false);
-  const [customPlaceholders, setCustomPlaceholders] = useState([]); // V16: user-configurable extra placeholders
-  const [placeholderInput, setPlaceholderInput] = useState(""); // V16: text input for adding custom placeholders
+  const [customPlaceholders, setCustomPlaceholders] = useState([]);
+  const [placeholderInput, setPlaceholderInput] = useState("");
+  const [chemicalName, setChemicalName] = useState("Chemical");
   const fileRef = useRef(null);
   const indRef = useRef(null);
   const kwRef = useRef(null);
@@ -688,6 +755,20 @@ export default function ChemicalSegmentationTool() {
         rows = groupEntities(rows, schema.supplier, schema.countryOrigin, "Supplier", customPlaceholders);
         rows = groupEntities(rows, schema.purchaser, schema.purchCountry, "Purchaser", customPlaceholders);
 
+        // V17: Region mapping
+        let regionUnmapped = 0;
+        rows.forEach(r => {
+          const pReg = mapCountryToRegion(r[schema.purchCountry]);
+          r.Purchaser_Continent = pReg.continent;
+          r.Purchaser_Is_Southeast_Asia = pReg.isSEA ? "Yes" : "No";
+          r.Purchaser_Region_Mapping_Status = pReg.status;
+          const sReg = mapCountryToRegion(r[schema.countryOrigin]);
+          r.Supplier_Continent = sReg.continent;
+          r.Supplier_Is_Southeast_Asia = sReg.isSEA ? "Yes" : "No";
+          r.Supplier_Region_Mapping_Status = sReg.status;
+          if (pReg.status !== "Mapped" || sReg.status !== "Mapped") regionUnmapped++;
+        });
+
         // Collect stats
         const suppStd = new Set(), purchStd = new Set();
         let suppReview = 0, purchReview = 0, suppPlh = 0, purchPlh = 0;
@@ -714,7 +795,7 @@ export default function ChemicalSegmentationTool() {
         newData[yr] = rows;
         log[yr] = {
           suppGroups: suppStd.size, purchGroups: purchStd.size, total: rows.length,
-          suppReview, purchReview, suppPlh, purchPlh, riskSamples,
+          suppReview, purchReview, suppPlh, purchPlh, riskSamples, regionUnmapped,
         };
       });
       setSheetData((prev) => ({ ...prev, ...newData }));
@@ -724,133 +805,159 @@ export default function ChemicalSegmentationTool() {
   }, [yearSheets, sheetData, schema, customPlaceholders]);
 
   /* ════════════════════════════════════
-     STEP 6 — TOP 80% RANKING (V16: Placeholder Exclusion)
+     STEP 6 — COMPANY RESEARCH EXPORT (V17: Multi-scope, Supplier + Purchaser)
      ════════════════════════════════════ */
+  // Generic top-80% ranking helper
+  const rankScope = useCallback((allRows, yr, entityType, stdCol, rawCol, countryCol, contCol, seaCol, groupIdCol, reviewCol, scopeFilter, scopeLabel) => {
+    const rows = scopeFilter ? allRows.filter(scopeFilter) : allRows;
+    const phSet = new Set([...DEFAULT_PLACEHOLDERS, ...customPlaceholders]);
+    const compMap = {};
+    let scopeTotal = 0, notCalc = 0;
+    rows.forEach(r => {
+      const rawTV = toNum(r[schema.totalValue]), rawUP = toNum(r[schema.unitPrice]), rawQ = toNum(r[schema.quantity]);
+      let rrv = null, src = "";
+      if (rawTV > 0) { rrv = rawTV; src = "Raw_TotalValue"; }
+      else if (rawUP > 0 && rawQ > 0) { rrv = rawUP * rawQ; src = "Calculated_UP_x_Q"; }
+      if (!rrv || rrv <= 0) { notCalc++; return; }
+      const stdName = r[stdCol] || "";
+      const rawName = r[rawCol] || "";
+      if (phSet.has(stdName.toUpperCase().trim()) || phSet.has(rawName.toUpperCase().trim()) || !stdName.trim()) return;
+      const key = stdName + "||" + (r[countryCol] || "").trim().toUpperCase();
+      if (!compMap[key]) compMap[key] = {
+        std: stdName, country: (r[countryCol]||"").trim(), continent: r[contCol]||"Unknown",
+        isSEA: r[seaCol]||"No", raws: new Set(), value: 0, src, gid: r[groupIdCol]||"", review: r[reviewCol]||"",
+      };
+      compMap[key].raws.add(rawName);
+      compMap[key].value += rrv;
+      scopeTotal += rrv;
+    });
+    const list = Object.values(compMap).sort((a,b) => b.value - a.value);
+    let cum = 0; const threshold = scopeTotal * 0.8;
+    list.forEach((p, i) => {
+      p.rank = i + 1;
+      p.share = scopeTotal > 0 ? p.value / scopeTotal : 0;
+      cum += p.value;
+      p.cumShare = scopeTotal > 0 ? cum / scopeTotal : 0;
+      p.isTop80 = (cum - p.value) < threshold;
+    });
+    const top80 = list.filter(p => p.isTop80);
+    return { list, top80, scopeTotal, notCalc, scopeLabel, entityType, year: yr };
+  }, [schema, customPlaceholders]);
+
   const runRanking = useCallback(() => {
     setProcessing(true);
     setTimeout(() => {
-      const ranking = {}; const newData = {};
-      yearSheets.forEach((yr) => {
+      const results = {};
+      const newData = {};
+      yearSheets.forEach(yr => {
         const rows = deepCopyRows(sheetData[yr]);
-
-        // --- Phase 1: Identify placeholders & compute row ranking values ---
-        let rawAnnualTotal = 0;
-        let placeholderValue = 0, placeholderRows = 0;
-        let placeholderNoneValue = 0, placeholderOtherValue = 0;
-        let validRealTotal = 0, notCalc = 0, notCalcRealRows = 0;
-        const purchMap = {};
-
-        rows.forEach((r) => {
+        // Compute Row_Ranking_Value for all rows
+        rows.forEach(r => {
           const rawTV = toNum(r[schema.totalValue]), rawUP = toNum(r[schema.unitPrice]), rawQ = toNum(r[schema.quantity]);
-          // Compute Row_Ranking_Value
           let rrv = null, src = "";
           if (rawTV > 0) { rrv = rawTV; src = "Raw_TotalValue"; }
           else if (rawUP > 0 && rawQ > 0) { rrv = rawUP * rawQ; src = "Calculated_UP_x_Q"; }
           r.Row_Ranking_Value = rrv;
           r.Row_Ranking_Value_Source = src || "Not_Calculable";
-          if (rrv > 0) rawAnnualTotal += rrv;
-
-          // V16: Check placeholder
-          const phReason = isPlaceholder(r[schema.purchaser], r.Purchaser_Standardize, customPlaceholders);
-          if (phReason) {
-            r.Purchaser_Ranking_Eligibility = "Excluded_Placeholder";
-            r.Purchaser_Ranking_Exclusion_Reason = phReason;
-            if (rrv > 0) {
-              placeholderValue += rrv;
-              placeholderRows++;
-              const upper = phReason.toUpperCase();
-              if (upper === "NONE") placeholderNoneValue += rrv;
-              else if (upper === "OTHER" || upper === "OTHERS") placeholderOtherValue += rrv;
-            }
-            return; // skip from ranking map
-          }
-
-          r.Purchaser_Ranking_Eligibility = "Eligible";
-          r.Purchaser_Ranking_Exclusion_Reason = "";
-
-          if (rrv === null) { notCalc++; notCalcRealRows++; r.Ranking_Value_Issue_Flag = "Not_Calculable"; return; }
-          r.Ranking_Value_Issue_Flag = "";
-
-          // Aggregate by purchaser
-          const key = (r.Purchaser_Standardize || "") + "||" + (r[schema.purchCountry] || "").trim().toUpperCase();
-          if (!purchMap[key]) purchMap[key] = { std: r.Purchaser_Standardize || "", country: (r[schema.purchCountry] || "").trim(), raws: new Set(), value: 0 };
-          purchMap[key].raws.add(r[schema.purchaser]);
-          purchMap[key].value += rrv;
-          validRealTotal += rrv;
         });
-
-        // --- Phase 2: Rank eligible real purchasers ---
-        const purchList = Object.values(purchMap).sort((a, b) => b.value - a.value);
-        let cum = 0; const threshold = validRealTotal * 0.8; const selNames = [];
-        purchList.forEach((p, idx) => {
-          p.rank = idx + 1;
-          p.share = validRealTotal > 0 ? p.value / validRealTotal : 0;
-          cum += p.value;
-          p.cumValue = cum;
-          p.cumShare = validRealTotal > 0 ? cum / validRealTotal : 0;
-          p.scope = (cum - p.value) < threshold ? "Top_80pct_Value" : "Below_80pct";
-          p.eligibility = "Eligible";
-          if (p.scope === "Top_80pct_Value") selNames.push(p.std);
+        const yrResults = {};
+        // Purchaser: all
+        yrResults.purch_all = rankScope(rows, yr, "Purchaser", "Purchaser_Standardize", schema.purchaser, schema.purchCountry, "Purchaser_Continent", "Purchaser_Is_Southeast_Asia", "Purchaser_Entity_Group_ID", "Purchaser_Review_Status", null, "All");
+        // Purchaser: Vietnam only
+        yrResults.purch_vn = rankScope(rows, yr, "Purchaser", "Purchaser_Standardize", schema.purchaser, schema.purchCountry, "Purchaser_Continent", "Purchaser_Is_Southeast_Asia", "Purchaser_Entity_Group_ID", "Purchaser_Review_Status", r => (r[schema.purchCountry]||"").toUpperCase().includes("VIETNAM") || (r[schema.purchCountry]||"").toUpperCase() === "VN", "Vietnam");
+        // Purchaser: by continent
+        const pConts = [...new Set(rows.map(r => r.Purchaser_Continent).filter(c => c && c !== "Unknown"))];
+        yrResults.purch_by_cont = {};
+        pConts.forEach(cont => {
+          yrResults.purch_by_cont[cont] = rankScope(rows, yr, "Purchaser", "Purchaser_Standardize", schema.purchaser, schema.purchCountry, "Purchaser_Continent", "Purchaser_Is_Southeast_Asia", "Purchaser_Entity_Group_ID", "Purchaser_Review_Status", r => r.Purchaser_Continent === cont, cont);
         });
-
-        // --- Phase 3: Assign flags to rows ---
-        const selSet = new Set(selNames);
-        rows.forEach((r) => {
-          if (r.Purchaser_Ranking_Eligibility === "Excluded_Placeholder") {
-            r.Research_Scope_Flag = "Placeholder_Excluded";
-            r.Top80_Research_Flag = "No";
-          } else if (r.Ranking_Value_Issue_Flag === "Not_Calculable") {
-            r.Research_Scope_Flag = "Value_Not_Calculable";
-            r.Top80_Research_Flag = "No";
-          } else if (selSet.has(r.Purchaser_Standardize)) {
-            r.Research_Scope_Flag = "Top_80pct_Value";
-            r.Top80_Research_Flag = "Yes";
-          } else {
-            r.Research_Scope_Flag = "Below_80pct";
-            r.Top80_Research_Flag = "No";
-          }
-          r.Valid_Year_Ranking_Value_Total = validRealTotal;
+        // Supplier: all
+        yrResults.supp_all = rankScope(rows, yr, "Supplier", "Supplier_Standardize", schema.supplier, schema.countryOrigin, "Supplier_Continent", "Supplier_Is_Southeast_Asia", "Supplier_Entity_Group_ID", "Supplier_Review_Status", null, "All");
+        // Supplier: by continent
+        const sConts = [...new Set(rows.map(r => r.Supplier_Continent).filter(c => c && c !== "Unknown"))];
+        yrResults.supp_by_cont = {};
+        sConts.forEach(cont => {
+          yrResults.supp_by_cont[cont] = rankScope(rows, yr, "Supplier", "Supplier_Standardize", schema.supplier, schema.countryOrigin, "Supplier_Continent", "Supplier_Is_Southeast_Asia", "Supplier_Entity_Group_ID", "Supplier_Review_Status", r => r.Supplier_Continent === cont, cont);
         });
-
+        // Assign Research_Scope_Flag for purchaser (global top80)
+        const selPurchSet = new Set(yrResults.purch_all.top80.map(p => p.std));
+        rows.forEach(r => {
+          const phSet = new Set([...DEFAULT_PLACEHOLDERS, ...customPlaceholders]);
+          const stdUp = (r.Purchaser_Standardize || "").toUpperCase().trim();
+          if (phSet.has(stdUp) || !stdUp) { r.Research_Scope_Flag = "Placeholder_Excluded"; r.Top80_Research_Flag = "No"; }
+          else if (r.Row_Ranking_Value == null) { r.Research_Scope_Flag = "Value_Not_Calculable"; r.Top80_Research_Flag = "No"; }
+          else if (selPurchSet.has(r.Purchaser_Standardize)) { r.Research_Scope_Flag = "Top_80pct_Value"; r.Top80_Research_Flag = "Yes"; }
+          else { r.Research_Scope_Flag = "Below_80pct"; r.Top80_Research_Flag = "No"; }
+        });
         newData[yr] = rows;
-        ranking[yr] = {
-          purchList, validRankVal: validRealTotal, rawAnnualTotal,
-          notCalc: notCalcRealRows, selectedCount: selNames.length,
-          totalPurchasers: purchList.length,
-          // V16 summary fields
-          placeholderValue, placeholderRows,
-          placeholderNoneValue, placeholderOtherValue,
-          excludedPlaceholderCount: placeholderRows,
-        };
+        results[yr] = yrResults;
       });
-      setSheetData((prev) => ({ ...prev, ...newData }));
-      setRankingData(ranking);
+      setSheetData(prev => ({ ...prev, ...newData }));
+      setRankingData(results);
       setProcessing(false);
-    }, 50);
-  }, [yearSheets, sheetData, schema, customPlaceholders]);
+    }, 80);
+  }, [yearSheets, sheetData, schema, customPlaceholders, rankScope]);
 
-  /* ─── Export Research List (V16) ─── */
-  const exportResearchList = useCallback(() => {
+  // Generic export helper
+  const buildExportRows = (scopeResult) => {
+    if (!scopeResult) return [];
+    return scopeResult.top80.map(p => ({
+      Year: scopeResult.year, Entity_Type: scopeResult.entityType,
+      Company_Standardize: p.std, Raw_Company_Name_Samples: [...p.raws].slice(0, 5).join("; "),
+      Country: p.country, Continent: p.continent, Is_Southeast_Asia: p.isSEA,
+      Company_Ranking_Value_Year: p.value, Scope_Ranking_Value_Total: scopeResult.scopeTotal,
+      Value_Share: p.share, Cumulative_Value_Share: p.cumShare,
+      Rank: p.rank, Ranking_Value_Source: p.src,
+      Entity_Group_ID: p.gid, Review_Status: p.review,
+      Industry: "", Industry_Segment: "",
+    }));
+  };
+
+  const exportFile = useCallback((filename, sheetBuilder) => {
     if (!rankingData) return;
     const wb = XLSX.utils.book_new();
-    yearSheets.forEach((yr) => {
-      const rd = rankingData[yr]; if (!rd) return;
-      const rows = rd.purchList.filter(p => p.scope === "Top_80pct_Value").map(p => ({
-        Year: yr, Raw_Purchaser_Names: [...p.raws].join("; "), Purchaser_Standardize: p.std,
-        Purchasing_Country: p.country,
-        Purchaser_Ranking_Eligibility: p.eligibility,
-        Purchaser_Ranking_Value_Year: p.value,
-        Valid_Year_Ranking_Value_Total: rd.validRankVal,
-        Purchaser_Value_Share: p.share,
-        Cumulative_Value_Share: p.cumShare,
-        Purchaser_Value_Rank: p.rank,
-        Top80_Research_Flag: "Yes",
-        Industry: "", Industry_Segment: "",
-      }));
-      if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr));
-    });
-    triggerDownload(XLSX.write(wb, { bookType: "xlsx", type: "array" }), "Purchaser_Research_List.xlsx");
+    yearSheets.forEach(yr => { sheetBuilder(wb, yr, rankingData[yr]); });
+    triggerDownload(XLSX.write(wb, { bookType: "xlsx", type: "array" }), filename);
   }, [yearSheets, rankingData]);
+
+  const exportImportersAll = useCallback(() => {
+    exportFile(chemicalName + "_top_80_percent_importers_all.xlsx", (wb, yr, rd) => {
+      const rows = buildExportRows(rd.purch_all);
+      if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_All"));
+    });
+  }, [exportFile, chemicalName]);
+
+  const exportImportersVN = useCallback(() => {
+    exportFile(chemicalName + "_top_80_percent_importers_all_vietnam.xlsx", (wb, yr, rd) => {
+      const rows = buildExportRows(rd.purch_vn);
+      if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_Vietnam"));
+    });
+  }, [exportFile, chemicalName]);
+
+  const exportImportersByCont = useCallback(() => {
+    exportFile(chemicalName + "_top_80_percent_importers_by_continent.xlsx", (wb, yr, rd) => {
+      Object.entries(rd.purch_by_cont).forEach(([cont, scope]) => {
+        const rows = buildExportRows(scope);
+        if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_" + cont));
+      });
+    });
+  }, [exportFile, chemicalName]);
+
+  const exportExportersAll = useCallback(() => {
+    exportFile(chemicalName + "_top_80_percent_exporters_all.xlsx", (wb, yr, rd) => {
+      const rows = buildExportRows(rd.supp_all);
+      if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_All"));
+    });
+  }, [exportFile, chemicalName]);
+
+  const exportExportersByCont = useCallback(() => {
+    exportFile(chemicalName + "_top_80_percent_exporters_by_continent.xlsx", (wb, yr, rd) => {
+      Object.entries(rd.supp_by_cont).forEach(([cont, scope]) => {
+        const rows = buildExportRows(scope);
+        if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_" + cont));
+      });
+    });
+  }, [exportFile, chemicalName]);
 
   /* ════════════════════════════════════
      STEP 7 — INDUSTRY MASTER UPLOAD
@@ -1095,18 +1202,15 @@ export default function ChemicalSegmentationTool() {
     setTimeout(() => {
       try {
         const wb = XLSX.utils.book_new();
-        // 00_Summary (V16: includes placeholder exclusion audit)
+        // 00_Summary (V17: includes company research summary)
         const sum = yearSheets.map(yr => ({
           Year: yr, Total_Rows: sheetData[yr].length,
           Backfilled: backfillLog?.[yr]?.backfilled||0, Value_Flagged: validationLog?.[yr]?.flagged||0,
           Supplier_Groups: entityLog?.[yr]?.suppGroups||0, Purchaser_Groups: entityLog?.[yr]?.purchGroups||0,
-          Raw_Annual_Total_Value: rankingData?.[yr]?.rawAnnualTotal||0,
-          Valid_Ranking_Denominator: rankingData?.[yr]?.validRankVal||0,
-          Excluded_NONE_Value: rankingData?.[yr]?.placeholderNoneValue||0,
-          Excluded_OTHER_Value: rankingData?.[yr]?.placeholderOtherValue||0,
-          Excluded_All_Placeholder_Value: rankingData?.[yr]?.placeholderValue||0,
-          Excluded_Placeholder_Rows: rankingData?.[yr]?.placeholderRows||0,
-          Top80_Purchasers: rankingData?.[yr]?.selectedCount||0,
+          Purchaser_Global_Top80: rankingData?.[yr]?.purch_all?.top80?.length||0,
+          Purchaser_Vietnam_Top80: rankingData?.[yr]?.purch_vn?.top80?.length||0,
+          Supplier_Global_Top80: rankingData?.[yr]?.supp_all?.top80?.length||0,
+          Purchaser_Global_Scope_Value: rankingData?.[yr]?.purch_all?.scopeTotal||0,
           Industry_Matched: industryLog?.[yr]?.matched||0,
           Classified_KW: classificationLog?.[yr]?.byKeyword||0, Classified_Ind: classificationLog?.[yr]?.byIndustry||0,
           Unclassified: classificationLog?.[yr]?.unclassified||0, Units_Converted: conversionLog?.[yr]?.converted||0,
@@ -1143,17 +1247,15 @@ export default function ChemicalSegmentationTool() {
           });
           if (reviewRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reviewRows), "Entity_Review");
         }
-        // Purchaser Research Scope (V16: with eligibility + exclusion audit)
+        // Purchaser Research Scope (V17)
         if (rankingData) {
           yearSheets.forEach(yr => {
-            const rd=rankingData[yr]; if(!rd) return;
-            const sc = rd.purchList.filter(p=>p.scope==="Top_80pct_Value").map(p => ({
-              Year:yr, Raw_Names:[...p.raws].join("; "), Purchaser_Std:p.std, Country:p.country,
-              Purchaser_Ranking_Eligibility: p.eligibility,
+            const rd=rankingData[yr]; if(!rd || !rd.purch_all) return;
+            const sc = rd.purch_all.top80.map(p => ({
+              Year:yr, Raw_Names:[...p.raws].slice(0,5).join("; "), Purchaser_Std:p.std, Country:p.country,
+              Continent: p.continent, Is_Southeast_Asia: p.isSEA,
               Purchaser_Ranking_Value_Year: p.value,
-              Valid_Year_Ranking_Value_Total: rd.validRankVal,
-              Excluded_Placeholder_Value: rd.placeholderValue,
-              Ranking_Value_Not_Calculable_Count: rd.notCalc,
+              Valid_Year_Ranking_Value_Total: rd.purch_all.scopeTotal,
               Purchaser_Value_Share: p.share, Cumulative_Value_Share: p.cumShare,
               Purchaser_Value_Rank: p.rank, Top80_Research_Flag: "Yes",
             }));
@@ -1339,79 +1441,93 @@ export default function ChemicalSegmentationTool() {
           </Card>
         </>;
 
-      /* ── 6: Ranking (V16: Placeholder Exclusion) ── */
-      case 6:
+      /* ── 6: Company Research Export (V17) ── */
+      case 6: {
+        const ExportBtn = ({icon, label, sub, onClick}) => (
+          <button onClick={onClick} style={{
+            display:"flex", alignItems:"center", gap:14, padding:"16px 22px", borderRadius:12,
+            border:"1px solid #e2e8f0", background:"#fff", cursor:"pointer", textAlign:"left",
+            flex:"1 1 280px", minWidth:260, transition:"all 0.15s", fontFamily:"inherit",
+          }}>
+            <span style={{fontSize:28}}>{icon}</span>
+            <div><div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{label}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{sub}</div></div>
+          </button>
+        );
         return <>
-          <Card title="Top 80% Purchaser Ranking" accent="#f97316">
+          <Card title="Company Research Export" accent="#f97316">
             {!rankingData ? <>
-              <p style={{color:"#475569",marginBottom:16,lineHeight:1.7}}>
-                Rank purchasers by raw-basis transaction value per year. <b>V16:</b> Placeholder purchasers
-                (NONE, OTHER, blank, N/A, UNKNOWN, etc.) are excluded from both numerator and denominator.
+              <p style={{color:"#475569",marginBottom:20,lineHeight:1.7,fontSize:14}}>
+                Rank <b>Purchasers</b> and <b>Suppliers</b> by raw-basis transaction value per year. Placeholder companies
+                are excluded. Results are split by Global, Vietnam, and each Continent for separate industry research.
               </p>
-
-              {/* Placeholder exclusion list editor */}
-              <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"16px 20px",marginBottom:16}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#9a3412",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>
-                  Excluded Placeholder Names
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
+                <div>
+                  <label style={{display:"block",fontSize:11.5,fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase"}}>Chemical / Project Name (for filenames)</label>
+                  <input value={chemicalName} onChange={e => setChemicalName(e.target.value)}
+                    style={{width:"100%",padding:"11px 14px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:14,fontFamily:"inherit"}} />
                 </div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
-                  {DEFAULT_PLACEHOLDERS.map(p => (
-                    <span key={p} style={{padding:"3px 10px",borderRadius:6,background:"#ffedd5",color:"#9a3412",fontSize:11,fontWeight:600}}>{p||"(blank)"}</span>
-                  ))}
-                  {customPlaceholders.map((p,i) => (
-                    <span key={"c"+i} style={{padding:"3px 10px",borderRadius:6,background:"#fde68a",color:"#92400e",fontSize:11,fontWeight:600,cursor:"pointer"}}
-                      onClick={() => setCustomPlaceholders(prev => prev.filter((_,j) => j!==i))} title="Click to remove">
-                      {p} ✕
-                    </span>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <input value={placeholderInput} onChange={e => setPlaceholderInput(e.target.value)}
-                    placeholder="Add custom placeholder name..."
-                    onKeyDown={e => { if (e.key==="Enter" && placeholderInput.trim()) { setCustomPlaceholders(prev => [...prev, placeholderInput.trim().toUpperCase()]); setPlaceholderInput(""); } }}
-                    style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit"}} />
-                  <Btn onClick={() => { if (placeholderInput.trim()) { setCustomPlaceholders(prev => [...prev, placeholderInput.trim().toUpperCase()]); setPlaceholderInput(""); } }}>Add</Btn>
+                <div>
+                  <label style={{display:"block",fontSize:11.5,fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase"}}>Placeholder Exclusions</label>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                    {DEFAULT_PLACEHOLDERS.slice(0,6).map(p => <span key={p} style={{padding:"2px 8px",borderRadius:5,background:"#ffedd5",color:"#9a3412",fontSize:10,fontWeight:600}}>{p}</span>)}
+                    <span style={{fontSize:10,color:"#94a3b8",alignSelf:"center"}}>+{DEFAULT_PLACEHOLDERS.length-6} more</span>
+                  </div>
                 </div>
               </div>
-
-              <Btn onClick={runRanking} disabled={processing}>{processing ? "Processing..." : "Calculate Ranking"}</Btn>
+              <Btn onClick={runRanking} disabled={processing}>{processing ? "Calculating all scopes..." : "Calculate Rankings"}</Btn>
             </> : <>
+              {/* Summary stats per year */}
               {yearSheets.map(yr => { const rd=rankingData[yr]; if(!rd) return null;
-                const top = rd.purchList.filter(p=>p.scope==="Top_80pct_Value");
                 return <div key={yr} style={{marginBottom:24}}>
-                  <h4 style={{fontSize:14,fontWeight:700,margin:"0 0 12px",color:"#f97316"}}>{yr}</h4>
-                  <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
-                    <StatBox label="Top 80% Selected" value={rd.selectedCount} color="#f97316"/>
-                    <StatBox label="Real Purchasers" value={rd.totalPurchasers} color="#64748b"/>
-                    <StatBox label="Valid Denom." value={"$"+(rd.validRankVal/1e6).toFixed(2)+"M"} color="#10b981"/>
+                  <h4 style={{fontSize:15,fontWeight:700,margin:"0 0 14px",color:"#f97316"}}>{yr}</h4>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+                    <div style={{padding:"14px 20px",borderRadius:10,background:"#eff6ff",border:"1px solid #bfdbfe"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#1d4ed8",textTransform:"uppercase",marginBottom:8}}>Importers (Purchasers)</div>
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <StatBox label="Global Top 80%" value={rd.purch_all.top80.length} color="#2563eb"/>
+                        <StatBox label="Vietnam Top 80%" value={rd.purch_vn.top80.length} color="#059669"/>
+                        <StatBox label="Continents" value={Object.keys(rd.purch_by_cont).length} color="#64748b"/>
+                      </div>
+                    </div>
+                    <div style={{padding:"14px 20px",borderRadius:10,background:"#fef3c7",border:"1px solid #fde68a"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#92400e",textTransform:"uppercase",marginBottom:8}}>Exporters (Suppliers)</div>
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <StatBox label="Global Top 80%" value={rd.supp_all.top80.length} color="#d97706"/>
+                        <StatBox label="Continents" value={Object.keys(rd.supp_by_cont).length} color="#64748b"/>
+                      </div>
+                    </div>
                   </div>
-                  {/* V16: Placeholder exclusion stats */}
-                  <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-                    <StatBox label="Excl. Placeholder Rows" value={rd.placeholderRows} color="#dc2626"/>
-                    <StatBox label="Excl. NONE Value" value={"$"+fmt(rd.placeholderNoneValue)} color="#b91c1c"/>
-                    <StatBox label="Excl. OTHER Value" value={"$"+fmt(rd.placeholderOtherValue)} color="#b91c1c"/>
-                    <StatBox label="Total Excl. Value" value={"$"+fmt(rd.placeholderValue)} color="#991b1b"/>
-                  </div>
-                  {rd.rawAnnualTotal > 0 && (
-                    <InfoBar type="info">
-                      Raw annual total: ${fmt(rd.rawAnnualTotal)} → Valid ranking denominator: ${fmt(rd.validRankVal)}
-                      (excluded {pct(rd.placeholderValue / rd.rawAnnualTotal)} placeholder value)
-                    </InfoBar>
-                  )}
-                  <MiniTable maxH={280}
-                    headers={["Rank","Purchaser","Country","Value","Share","Cum%"]}
-                    rows={top.slice(0,30).map(p=>[p.rank,p.std,p.country,"$"+fmt(p.value),pct(p.share),pct(p.cumShare)])} />
-                  {top.length>30 && <div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>...and {top.length-30} more</div>}
+                  {/* Global Importer preview table */}
+                  <MiniTable maxH={200}
+                    headers={["#","Purchaser","Country","Continent","Value","Share","Cum%"]}
+                    rows={rd.purch_all.top80.slice(0,15).map(p=>[p.rank,p.std,p.country,p.continent,"$"+fmt(p.value),pct(p.share),pct(p.cumShare)])} />
+                  {rd.purch_all.top80.length>15 && <div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>...and {rd.purch_all.top80.length-15} more importers</div>}
                 </div>;
               })}
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                <Btn primary={false} onClick={exportResearchList}>⬇ Export Research List</Btn>
-                <Btn primary={false} onClick={() => { setRankingData(null); }}>↻ Re-run with changes</Btn>
+
+              {/* Download buttons */}
+              <Card title="Download Research Files" accent="#059669">
+                <p style={{color:"#475569",marginBottom:16,fontSize:13}}>
+                  Filename prefix: <b>{chemicalName}</b>. Each file contains year-separated sheets with Industry + Industry Segment columns ready for manual research.
+                </p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+                  <ExportBtn icon="🌍" label="Importers — All (Global)" sub="Top 80% purchasers by global annual value" onClick={exportImportersAll} />
+                  <ExportBtn icon="🇻🇳" label="Importers — Vietnam Only" sub="Top 80% purchasers for Vietnam" onClick={exportImportersVN} />
+                  <ExportBtn icon="🗺️" label="Importers — By Continent" sub="Top 80% within each continent" onClick={exportImportersByCont} />
+                  <ExportBtn icon="🏭" label="Exporters — All (Global)" sub="Top 80% suppliers by global annual value" onClick={exportExportersAll} />
+                  <ExportBtn icon="🌐" label="Exporters — By Continent" sub="Top 80% within each continent" onClick={exportExportersByCont} />
+                </div>
+              </Card>
+
+              <div style={{display:"flex",gap:12,marginTop:8}}>
+                <Btn primary={false} onClick={() => setRankingData(null)}>↻ Re-calculate</Btn>
                 <Btn onClick={() => setStep(7)}>Next: Industry Master →</Btn>
               </div>
             </>}
           </Card>
         </>;
+      }
 
 
       /* ── 7: Industry Master ── */
