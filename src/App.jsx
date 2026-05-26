@@ -392,23 +392,23 @@ function isPlaceholder(rawName, stdName, extraList) {
    ═══════════════════════════════════════════════ */
 const Card = ({ title, children, accent }) => (
   <div style={{
-    background: "#fff", borderRadius: 14, padding: "24px 28px",
-    boxShadow: "0 2px 16px rgba(0,0,0,0.06)", borderLeft: "4px solid " + (accent || "#2563eb"),
-    marginBottom: 18,
+    background: "#fff", borderRadius: 14, padding: "28px 36px",
+    boxShadow: "0 2px 20px rgba(0,0,0,0.06)", borderLeft: "4px solid " + (accent || "#2563eb"),
+    marginBottom: 20, width: "100%",
   }}>
-    {title && <h3 style={{ margin: "0 0 14px", fontSize: 16, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>{title}</h3>}
+    {title && <h3 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>{title}</h3>}
     {children}
   </div>
 );
 
 const StatBox = ({ label, value, sub, color }) => (
   <div style={{
-    background: (color || "#e2e8f0") + "12", borderRadius: 10, padding: "16px 20px",
-    minWidth: 130, flex: 1, border: "1px solid " + (color || "#e2e8f0") + "33",
+    background: (color || "#e2e8f0") + "12", borderRadius: 12, padding: "18px 24px",
+    minWidth: 160, flex: "1 1 160px", border: "1px solid " + (color || "#e2e8f0") + "33",
   }}>
-    <div style={{ fontSize: 24, fontWeight: 800, color: color || "#2563eb", letterSpacing: "-0.03em" }}>{value}</div>
-    <div style={{ fontSize: 11, color: "#475569", marginTop: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
-    {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{sub}</div>}
+    <div style={{ fontSize: 26, fontWeight: 800, color: color || "#2563eb", letterSpacing: "-0.03em" }}>{value}</div>
+    <div style={{ fontSize: 11, color: "#475569", marginTop: 5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+    {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{sub}</div>}
   </div>
 );
 
@@ -428,13 +428,13 @@ const Btn = ({ children, onClick, disabled, primary, big }) => (
 );
 
 const MiniTable = ({ headers, rows, maxH }) => (
-  <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: maxH || 340, borderRadius: 8, border: "1px solid #e2e8f0" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+  <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: maxH || 400, borderRadius: 10, border: "1px solid #e2e8f0", width: "100%" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
       <thead>
         <tr>{headers.map((h, i) => (
           <th key={i} style={{
-            padding: "10px 12px", textAlign: "left", background: "#f8fafc", color: "#0f172a",
-            fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em",
+            padding: "11px 14px", textAlign: "left", background: "#f8fafc", color: "#0f172a",
+            fontWeight: 700, fontSize: 11.5, textTransform: "uppercase", letterSpacing: "0.05em",
             position: "sticky", top: 0, borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap", zIndex: 1,
           }}>{h}</th>
         ))}</tr>
@@ -443,8 +443,8 @@ const MiniTable = ({ headers, rows, maxH }) => (
         <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#fafbfc" }}>
           {row.map((cell, ci) => (
             <td key={ci} style={{
-              padding: "8px 12px", borderBottom: "1px solid #f1f5f9",
-              color: "#0f172a", whiteSpace: "nowrap", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis",
+              padding: "9px 14px", borderBottom: "1px solid #f1f5f9",
+              color: "#0f172a", whiteSpace: "nowrap", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis",
             }}>{cell != null ? String(cell) : ""}</td>
           ))}
         </tr>
@@ -454,12 +454,12 @@ const MiniTable = ({ headers, rows, maxH }) => (
 );
 
 const DropZone = ({ icon, text, inputRef, accept, onChange }) => (
-  <div>
+  <div style={{width:"100%"}}>
     <div onClick={() => inputRef.current && inputRef.current.click()}
       style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        padding: "48px 24px", border: "2px dashed #cbd5e1", borderRadius: 12,
-        cursor: "pointer", transition: "all 0.2s", background: "#f8fafc",
+        padding: "52px 24px", border: "2px dashed #cbd5e1", borderRadius: 14,
+        cursor: "pointer", transition: "all 0.2s", background: "#f8fafc", width: "100%",
       }}
       onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "#2563eb"; }}
       onDragLeave={(e) => { e.currentTarget.style.borderColor = "#cbd5e1"; }}
@@ -470,8 +470,8 @@ const DropZone = ({ icon, text, inputRef, accept, onChange }) => (
         if (f) onChange({ target: { files: [f] } });
       }}
     >
-      <div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", marginBottom: 6 }}>{text}</div>
+      <div style={{ fontSize: 52, marginBottom: 14 }}>{icon}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: "#0f172a", marginBottom: 6 }}>{text}</div>
       <div style={{ fontSize: 13, color: "#94a3b8" }}>Click or drag & drop</div>
     </div>
     <input ref={inputRef} type="file" accept={accept} onChange={onChange}
@@ -1219,26 +1219,26 @@ export default function ChemicalSegmentationTool() {
       /* ── 1: Schema ── */
       case 1:
         return <Card title="Schema Mapping" accent="#8b5cf6">
-          <p style={{color:"#475569",marginBottom:16,lineHeight:1.6}}>
+          <p style={{color:"#475569",marginBottom:20,lineHeight:1.6,fontSize:14}}>
             Map your column headers to required fields. {yearSheets.length} sheet(s) detected: {yearSheets.join(", ")}
           </p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"20px 28px"}}>
             {SCHEMA_FIELDS.map(f => (
-              <div key={f.key} style={{flex:"1 1 280px",minWidth:260}}>
-                <label style={{display:"block",fontSize:11,fontWeight:700,color:"#475569",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>
+              <div key={f.key}>
+                <label style={{display:"block",fontSize:11.5,fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>
                   {f.label} {schema[f.key] ? " ✅" : " ⚠️"}
                 </label>
                 <select value={schema[f.key]||""} onChange={e => setSchema(p=>({...p,[f.key]:e.target.value}))}
-                  style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"#fff",color:"#0f172a",fontSize:13,fontFamily:"inherit"}}>
-                  <option value="">— Select —</option>
+                  style={{width:"100%",padding:"11px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:"#fff",color:"#0f172a",fontSize:14,fontFamily:"inherit"}}>
+                  <option value="">— Select column —</option>
                   {allCols.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             ))}
           </div>
-          <div style={{marginTop:20}}>
+          <div style={{marginTop:24}}>
             <Btn disabled={!schemaComplete} onClick={() => setStep(2)}>Confirm Mapping →</Btn>
-            {!schemaComplete && <span style={{marginLeft:12,fontSize:12,color:"#ef4444"}}>All fields must be mapped</span>}
+            {!schemaComplete && <span style={{marginLeft:14,fontSize:13,color:"#ef4444"}}>All fields must be mapped</span>}
           </div>
         </Card>;
 
@@ -1551,9 +1551,9 @@ export default function ChemicalSegmentationTool() {
     <div style={{ fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif", display:"flex", minHeight:"100vh", background:"#f1f5f9", color:"#0f172a" }}>
 
       {/* ── Sidebar ── */}
-      <aside style={{ width:248, minWidth:248, background:"#0f172a", padding:"20px 0", display:"flex", flexDirection:"column", overflowY:"auto", flexShrink:0 }}>
-        <div style={{ padding:"0 20px 20px", borderBottom:"1px solid rgba(255,255,255,0.08)", marginBottom:8 }}>
-          <div style={{ fontSize:16, fontWeight:800, color:"#fff", letterSpacing:"-0.02em" }}>⚗️ ChemSeg V15</div>
+      <aside style={{ width:220, minWidth:220, background:"#0f172a", padding:"20px 0", display:"flex", flexDirection:"column", overflowY:"auto", flexShrink:0 }}>
+        <div style={{ padding:"0 18px 18px", borderBottom:"1px solid rgba(255,255,255,0.08)", marginBottom:8 }}>
+          <div style={{ fontSize:16, fontWeight:800, color:"#fff", letterSpacing:"-0.02em" }}>⚗️ ChemSeg V17</div>
           <div style={{ fontSize:11, color:"#94a3b8", marginTop:4 }}>Chemical Segmentation Tool</div>
         </div>
         {STEPS.map((s, i) => {
@@ -1563,46 +1563,48 @@ export default function ChemicalSegmentationTool() {
             <button key={s.id} onClick={() => { if (i<=step) setStep(i); }}
               style={{
                 display:"flex", alignItems:"center", gap:10, width:"100%",
-                padding:"9px 20px", border:"none", textAlign:"left", fontFamily:"inherit",
+                padding:"9px 18px", border:"none", textAlign:"left", fontFamily:"inherit",
                 background: active ? "#1e40af" : "transparent",
                 color: active ? "#fff" : done ? "#93c5fd" : "#64748b",
                 cursor: i<=step ? "pointer" : "default", fontSize:12.5, fontWeight: active ? 700 : 500,
                 opacity: i>step ? 0.35 : 1, transition:"all 0.15s",
                 borderLeft: active ? "3px solid #60a5fa" : "3px solid transparent",
               }}>
-              <span style={{fontSize:13,width:22,textAlign:"center",flexShrink:0}}>{done && !active ? "✓" : s.icon}</span>
+              <span style={{fontSize:13,width:20,textAlign:"center",flexShrink:0}}>{done && !active ? "✓" : s.icon}</span>
               <span style={{lineHeight:1.3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.label}</span>
             </button>
           );
         })}
         <div style={{flex:1}}/>
-        <div style={{padding:"16px 20px",borderTop:"1px solid rgba(255,255,255,0.08)",fontSize:11,color:"#475569"}}>
+        <div style={{padding:"14px 18px",borderTop:"1px solid rgba(255,255,255,0.08)",fontSize:11,color:"#475569"}}>
           {yearSheets.length>0 && <div>📅 {yearSheets.join(", ")}</div>}
           <div style={{marginTop:4}}>Step {step+1} / {STEPS.length}</div>
         </div>
       </aside>
 
       {/* ── Main Content ── */}
-      <main style={{ flex:1, padding:"28px 36px", overflowY:"auto", maxWidth:980 }}>
-        <div style={{ marginBottom:24 }}>
-          <h1 style={{ fontSize:22, fontWeight:800, margin:0, letterSpacing:"-0.03em", display:"flex", alignItems:"center", gap:10 }}>
-            <span>{STEPS[step]?.icon}</span> {STEPS[step]?.label}
-          </h1>
-          <div style={{ fontSize:13, color:"#94a3b8", marginTop:4 }}>
-            Step {step+1} of {STEPS.length}
-            {yearSheets.length>0 && (" — "+yearSheets.join(", "))}
+      <main style={{ flex:1, padding:"32px 48px", overflowY:"auto" }}>
+        <div style={{ maxWidth:1280, margin:"0 auto" }}>
+          <div style={{ marginBottom:28 }}>
+            <h1 style={{ fontSize:24, fontWeight:800, margin:0, letterSpacing:"-0.03em", display:"flex", alignItems:"center", gap:10 }}>
+              <span>{STEPS[step]?.icon}</span> {STEPS[step]?.label}
+            </h1>
+            <div style={{ fontSize:13, color:"#94a3b8", marginTop:5 }}>
+              Step {step+1} of {STEPS.length}
+              {yearSheets.length>0 && (" — "+yearSheets.join(", "))}
+            </div>
           </div>
+
+          {processing && (
+            <InfoBar type="info">
+              <span style={{display:"inline-block",animation:"spin 1s linear infinite",marginRight:8}}>⏳</span>
+              Processing...
+              <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+            </InfoBar>
+          )}
+
+          {renderStep()}
         </div>
-
-        {processing && (
-          <InfoBar type="info">
-            <span style={{display:"inline-block",animation:"spin 1s linear infinite",marginRight:8}}>⏳</span>
-            Processing...
-            <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
-          </InfoBar>
-        )}
-
-        {renderStep()}
       </main>
     </div>
   );
