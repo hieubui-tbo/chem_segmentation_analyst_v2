@@ -572,6 +572,8 @@ export default function ChemicalSegmentationTool() {
   const [entityLog, setEntityLog] = useState(null);
   const [rankingData, setRankingData] = useState(null);
   const [industryLog, setIndustryLog] = useState(null);
+  const [industryMasterRows, setIndustryMasterRows] = useState([]);
+  const [industryFiles, setIndustryFiles] = useState([]);
   const [keywordMatrix, setKeywordMatrix] = useState(null);
   const [keywordConflicts, setKeywordConflicts] = useState([]);
   const [classificationLog, setClassificationLog] = useState(null);
@@ -635,6 +637,7 @@ export default function ChemicalSegmentationTool() {
         // Reset downstream
         setQualityReport(null); setBackfillLog(null); setValidationLog(null);
         setEntityLog(null); setRankingData(null); setIndustryLog(null);
+        setIndustryMasterRows([]); setIndustryFiles([]);
         setKeywordMatrix(null); setKeywordConflicts([]); setClassificationLog(null);
         setConversionLog(null); setIqrResults(null); setSegmentMetrics(null);
         setExportDone(false);
@@ -901,13 +904,22 @@ export default function ChemicalSegmentationTool() {
   // Generic export helper
   const buildExportRows = (scopeResult) => {
     if (!scopeResult) return [];
+    const isPurch = scopeResult.entityType === "Purchaser";
     return scopeResult.top80.map(p => ({
-      Year: scopeResult.year, Entity_Type: scopeResult.entityType,
-      Company_Standardize: p.std, Raw_Company_Name_Samples: [...p.raws].slice(0, 5).join("; "),
-      Country: p.country, Continent: p.continent, Is_Southeast_Asia: p.isSEA,
-      Company_Ranking_Value_Year: p.value, Scope_Ranking_Value_Total: scopeResult.scopeTotal,
-      Value_Share: p.share, Cumulative_Value_Share: p.cumShare, Rank: p.rank,
-      Industry: "", Industry_Segment: "",
+      Year: scopeResult.year,
+      Entity_Type: scopeResult.entityType,
+      [isPurch ? "Purchaser_Standardize" : "Supplier_Standardize"]: p.std,
+      Raw_Company_Name_Samples: [...p.raws].slice(0, 5).join("; "),
+      [isPurch ? "Purchasing Country" : "Country of Origin"]: p.country,
+      Continent: p.continent,
+      Is_Southeast_Asia: p.isSEA,
+      Company_Ranking_Value_Year: p.value,
+      Scope_Ranking_Value_Total: scopeResult.scopeTotal,
+      Value_Share: p.share,
+      Cumulative_Value_Share: p.cumShare,
+      Rank: p.rank,
+      Industry: "",
+      "Industry Segment": "",
     }));
   };
 
@@ -960,7 +972,7 @@ export default function ChemicalSegmentationTool() {
   }, [exportFile, chemicalName]);
 
   /* ════════════════════════════════════
-     STEP 7 — INDUSTRY MASTER UPLOAD
+     STEP 7 — INDUSTRY MASTER UPLOAD (Multi-file)
      ════════════════════════════════════ */
   const handleIndustryUpload = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -970,36 +982,67 @@ export default function ChemicalSegmentationTool() {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: "array" });
-        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-        const cols = Object.keys(data[0] || {});
+        const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+        const cols = Object.keys(raw[0] || {});
         const reqd = ["Purchaser_Standardize","Purchasing Country","Industry","Industry Segment"];
-        const miss = reqd.filter(r => !cols.some(c => c.trim().toLowerCase() === r.toLowerCase()));
-        if (miss.length) { alert("Industry Master missing columns:\n" + miss.join(", ")); setProcessing(false); return; }
-        const log = {}; const newData = {};
-        yearSheets.forEach((yr) => {
-          const rows = deepCopyRows(sheetData[yr]);
-          let matched=0, unmatched=0;
-          rows.forEach((r) => {
-            if (r.Research_Scope_Flag !== "Top_80pct_Value") { r.Industry=""; r.Industry_Segment=""; unmatched++; return; }
-            const m = data.find(d =>
-              (d["Purchaser_Standardize"]||"").trim().toUpperCase() === (r.Purchaser_Standardize||"").toUpperCase() &&
-              (d["Purchasing Country"]||"").trim().toUpperCase() === (r[schema.purchCountry]||"").trim().toUpperCase()
-            );
-            if (m) { r.Industry = m.Industry||""; r.Industry_Segment = m["Industry Segment"]||""; matched++; }
-            else { r.Industry=""; r.Industry_Segment=""; unmatched++; }
-          });
-          newData[yr] = rows;
-          log[yr] = { matched, unmatched };
+        const colMap = {};
+        reqd.forEach(r => {
+          const match = cols.find(c => c.trim().toLowerCase() === r.toLowerCase());
+          if (match) colMap[r] = match;
         });
-        setSheetData((prev) => ({ ...prev, ...newData }));
-        setIndustryLog(log);
-      } catch (err) { alert("Error: " + err.message); }
+        const miss = reqd.filter(r => !colMap[r]);
+        if (miss.length) { alert("File missing required columns:\n" + miss.join(", ") + "\n\nFound: " + cols.join(", ")); setProcessing(false); return; }
+        // Extract only 4 required columns, normalized
+        const extracted = raw.map(row => ({
+          "Purchaser_Standardize": String(row[colMap["Purchaser_Standardize"]] || "").trim(),
+          "Purchasing Country": String(row[colMap["Purchasing Country"]] || "").trim(),
+          "Industry": String(row[colMap["Industry"]] || "").trim(),
+          "Industry Segment": String(row[colMap["Industry Segment"]] || "").trim(),
+        })).filter(r => r["Purchaser_Standardize"] && r["Industry Segment"]);
+        // Merge into accumulated (deduplicate by Purchaser_Standardize + Purchasing Country, last-write-wins)
+        setIndustryMasterRows(prev => {
+          const merged = [...prev];
+          extracted.forEach(newRow => {
+            const key = newRow["Purchaser_Standardize"].toUpperCase() + "||" + newRow["Purchasing Country"].toUpperCase();
+            const existIdx = merged.findIndex(m => m["Purchaser_Standardize"].toUpperCase() + "||" + m["Purchasing Country"].toUpperCase() === key);
+            if (existIdx >= 0) merged[existIdx] = newRow;
+            else merged.push(newRow);
+          });
+          return merged;
+        });
+        setIndustryFiles(prev => [...prev, { name: file.name, rows: extracted.length }]);
+      } catch (err) { alert("Error reading file: " + err.message); }
       setProcessing(false);
-      // Reset ref so same file can be re-selected
       if (indRef.current) indRef.current.value = "";
     };
     reader.readAsArrayBuffer(file);
-  }, [sheetData, yearSheets, schema]);
+  }, []);
+
+  const applyIndustryMaster = useCallback(() => {
+    if (!industryMasterRows.length) return;
+    setProcessing(true);
+    setTimeout(() => {
+      const log = {}; const newData = {};
+      yearSheets.forEach(yr => {
+        const rows = deepCopyRows(sheetData[yr]);
+        let matched = 0, unmatched = 0;
+        rows.forEach(r => {
+          if (r.Research_Scope_Flag !== "Top_80pct_Value") { r.Industry = ""; r.Industry_Segment = ""; unmatched++; return; }
+          const m = industryMasterRows.find(d =>
+            d["Purchaser_Standardize"].toUpperCase() === (r.Purchaser_Standardize || "").toUpperCase() &&
+            d["Purchasing Country"].toUpperCase() === (r[schema.purchCountry] || "").trim().toUpperCase()
+          );
+          if (m) { r.Industry = m["Industry"]; r.Industry_Segment = m["Industry Segment"]; matched++; }
+          else { r.Industry = ""; r.Industry_Segment = ""; unmatched++; }
+        });
+        newData[yr] = rows;
+        log[yr] = { matched, unmatched };
+      });
+      setSheetData(prev => ({ ...prev, ...newData }));
+      setIndustryLog(log);
+      setProcessing(false);
+    }, 50);
+  }, [industryMasterRows, sheetData, yearSheets, schema]);
 
   /* ════════════════════════════════════
      STEP 8 — KEYWORD MATRIX UPLOAD
@@ -1530,13 +1573,39 @@ export default function ChemicalSegmentationTool() {
       }
 
 
-      /* ── 7: Industry Master ── */
+      /* ── 7: Industry Master (Multi-file) ── */
       case 7:
         return <Card title="Upload Industry Master" accent="#8b5cf6">
-          <p style={{color:"#475569",marginBottom:16,lineHeight:1.7}}>
-            Required columns: <b>Purchaser_Standardize</b>, <b>Purchasing Country</b>, <b>Industry</b>, <b>Industry Segment</b>
+          <p style={{color:"#475569",marginBottom:16,lineHeight:1.7,fontSize:14}}>
+            Upload one or more Excel files containing: <b>Purchaser_Standardize</b>, <b>Purchasing Country</b>, <b>Industry</b>, <b>Industry Segment</b>.
+            Extra columns in the file are ignored. Duplicate entries across files are deduplicated (last file wins).
           </p>
           <DropZone icon="🏭" text="Drop Industry Master file here (.xlsx)" inputRef={indRef} accept=".xlsx,.xls" onChange={handleIndustryUpload} />
+
+          {/* Uploaded files list */}
+          {industryFiles.length > 0 && <div style={{marginTop:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase"}}>
+              Uploaded Files ({industryFiles.length})
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+              {industryFiles.map((f,i) => (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                  <span style={{fontSize:16}}>📄</span>
+                  <span style={{fontSize:13,fontWeight:600,color:"#0f172a",flex:1}}>{f.name}</span>
+                  <span style={{fontSize:12,color:"#64748b"}}>{f.rows} entries</span>
+                </div>
+              ))}
+            </div>
+            <InfoBar type="info">Total unique entries: {industryMasterRows.length} (deduplicated by Purchaser + Country)</InfoBar>
+            <div style={{display:"flex",gap:12,marginTop:12}}>
+              <Btn onClick={applyIndustryMaster} disabled={processing}>
+                {processing ? "Matching..." : "Apply to Dataset (" + industryMasterRows.length + " entries)"}
+              </Btn>
+              <Btn primary={false} onClick={() => { setIndustryMasterRows([]); setIndustryFiles([]); setIndustryLog(null); }}>Clear All</Btn>
+            </div>
+          </div>}
+
+          {/* Match results */}
           {industryLog && <>
             <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:16}}>
               {yearSheets.map(yr => <StatBox key={yr} label={yr+" Matched"} value={fmt(industryLog[yr]?.matched)} sub={industryLog[yr]?.unmatched+" unmatched"} color="#8b5cf6"/>)}
@@ -1545,7 +1614,7 @@ export default function ChemicalSegmentationTool() {
               <Btn onClick={() => setStep(8)}>Next: Keyword Matrix →</Btn>
             </div>
           </>}
-          {!industryLog && <div style={{marginTop:16}}>
+          {!industryLog && industryFiles.length === 0 && <div style={{marginTop:16}}>
             <Btn primary={false} onClick={() => setStep(8)}>Skip (no industry data) →</Btn>
           </div>}
         </Card>;
