@@ -906,9 +906,7 @@ export default function ChemicalSegmentationTool() {
       Company_Standardize: p.std, Raw_Company_Name_Samples: [...p.raws].slice(0, 5).join("; "),
       Country: p.country, Continent: p.continent, Is_Southeast_Asia: p.isSEA,
       Company_Ranking_Value_Year: p.value, Scope_Ranking_Value_Total: scopeResult.scopeTotal,
-      Value_Share: p.share, Cumulative_Value_Share: p.cumShare,
-      Rank: p.rank, Ranking_Value_Source: p.src,
-      Entity_Group_ID: p.gid, Review_Status: p.review,
+      Value_Share: p.share, Cumulative_Value_Share: p.cumShare, Rank: p.rank,
       Industry: "", Industry_Segment: "",
     }));
   };
@@ -936,10 +934,11 @@ export default function ChemicalSegmentationTool() {
 
   const exportImportersByCont = useCallback(() => {
     exportFile(chemicalName + "_top_80_percent_importers_by_continent.xlsx", (wb, yr, rd) => {
+      const allRows = [];
       Object.entries(rd.purch_by_cont).forEach(([cont, scope]) => {
-        const rows = buildExportRows(scope);
-        if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_" + cont));
+        buildExportRows(scope).forEach(r => allRows.push(r));
       });
+      if (allRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allRows), safeSheetName(yr));
     });
   }, [exportFile, chemicalName]);
 
@@ -952,10 +951,11 @@ export default function ChemicalSegmentationTool() {
 
   const exportExportersByCont = useCallback(() => {
     exportFile(chemicalName + "_top_80_percent_exporters_by_continent.xlsx", (wb, yr, rd) => {
+      const allRows = [];
       Object.entries(rd.supp_by_cont).forEach(([cont, scope]) => {
-        const rows = buildExportRows(scope);
-        if (rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), safeSheetName(yr + "_" + cont));
+        buildExportRows(scope).forEach(r => allRows.push(r));
       });
+      if (allRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allRows), safeSheetName(yr));
     });
   }, [exportFile, chemicalName]);
 
