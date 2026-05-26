@@ -1355,8 +1355,7 @@ export default function ChemicalSegmentationTool() {
       triggerDownload(XLSX.write(wb1, { bookType:"xlsx", type:"array" }), "ChemSeg_AuditReport_"+today+".xlsx");
       await new Promise(r => setTimeout(r, 500)); // pause between downloads
 
-      /* ── FILE 2: Raw Data (Before/After per year) — slim columns only ── */
-      // Keep original mapped columns + key audit columns; drop all internal/debug fields
+      /* ── FILE 2+: Raw Data — one file per year to avoid memory crash ── */
       const KEEP_COMPUTED = new Set([
         "Supplier_Standardize", "Purchaser_Standardize",
         "Supplier_Continent", "Purchaser_Continent",
@@ -1375,16 +1374,17 @@ export default function ChemicalSegmentationTool() {
         return out;
       };
 
-      const wb2 = XLSX.utils.book_new();
       for (const yr of yearSheets) {
+        const wbYr = XLSX.utils.book_new();
         const rows = sheetData[yr];
-        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows.map(slimRow)), safeSheetName(yr+"_Before"));
+        XLSX.utils.book_append_sheet(wbYr, XLSX.utils.json_to_sheet(rows.map(slimRow)), safeSheetName(yr+"_Before"));
         await yield_();
         const after = rows.filter(r => !(r.Pre_Conversion_Value_Check==="Outlier" && r.IQR_Segment_Check==="IQR Outlier"));
-        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(after.map(slimRow)), safeSheetName(yr+"_After"));
+        XLSX.utils.book_append_sheet(wbYr, XLSX.utils.json_to_sheet(after.map(slimRow)), safeSheetName(yr+"_After"));
         await yield_();
+        triggerDownload(XLSX.write(wbYr, { bookType:"xlsx", type:"array", bookSST: false }), `ChemSeg_${yr}_RawData_${today}.xlsx`);
+        await new Promise(r => setTimeout(r, 400));
       }
-      triggerDownload(XLSX.write(wb2, { bookType:"xlsx", type:"array" }), "ChemSeg_RawData_"+today+".xlsx");
 
       setExportDone(true);
     } catch (err) { alert("Export error: " + err.message); }
