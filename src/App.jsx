@@ -1355,14 +1355,33 @@ export default function ChemicalSegmentationTool() {
       triggerDownload(XLSX.write(wb1, { bookType:"xlsx", type:"array" }), "ChemSeg_AuditReport_"+today+".xlsx");
       await new Promise(r => setTimeout(r, 500)); // pause between downloads
 
-      /* ── FILE 2: Raw Data (Before/After per year) ── */
+      /* ── FILE 2: Raw Data (Before/After per year) — slim columns only ── */
+      // Keep original mapped columns + key audit columns; drop all internal/debug fields
+      const KEEP_COMPUTED = new Set([
+        "Supplier_Standardize", "Purchaser_Standardize",
+        "Supplier_Continent", "Purchaser_Continent",
+        "Supplier_Is_Southeast_Asia", "Purchaser_Is_Southeast_Asia",
+        "Research_Scope_Flag", "Final_Segment",
+        "Industry", "Industry_Segment",
+        "IQR_Segment_Check", "Pre_Conversion_Value_Check",
+        "Supplier_Review_Status", "Purchaser_Review_Status",
+      ]);
+      const origCols = new Set(Object.values(schema).filter(Boolean));
+      const slimRow = (r) => {
+        const out = {};
+        for (const k of Object.keys(r)) {
+          if (origCols.has(k) || KEEP_COMPUTED.has(k)) out[k] = r[k];
+        }
+        return out;
+      };
+
       const wb2 = XLSX.utils.book_new();
       for (const yr of yearSheets) {
         const rows = sheetData[yr];
-        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), safeSheetName(yr+"_Before"));
+        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows.map(slimRow)), safeSheetName(yr+"_Before"));
         await yield_();
         const after = rows.filter(r => !(r.Pre_Conversion_Value_Check==="Outlier" && r.IQR_Segment_Check==="IQR Outlier"));
-        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(after), safeSheetName(yr+"_After"));
+        XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(after.map(slimRow)), safeSheetName(yr+"_After"));
         await yield_();
       }
       triggerDownload(XLSX.write(wb2, { bookType:"xlsx", type:"array" }), "ChemSeg_RawData_"+today+".xlsx");
