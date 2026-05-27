@@ -29,11 +29,24 @@ const UNIT_FACTORS = {
 };
 const AMBIGUOUS_UNITS = ["TON", "TONS", "T"];
 
-// V16: Default placeholder purchaser names to exclude from Top 80% ranking
+// Default placeholder names to exclude from Top 80% ranking (exact match)
 const DEFAULT_PLACEHOLDERS = [
   "NONE", "OTHER", "OTHERS", "N/A", "NA", "UNKNOWN", "NOT FOUND",
-  "TO THE ORDER OF", "TO ORDER", "NO DATA", "NULL", "NOT APPLICABLE",
-  "NOT AVAILABLE", "UNIDENTIFIED", "UNSPECIFIED", "TBD", "TBC",
+  "TO THE ORDER OF", "TO ORDER", "TO THE ORDER", "TO ORDER OF",
+  "ORDER", "ORDER OF SHIPPER", "TO THE ORDER OF SHIPPER",
+  "SHIPPER", "SHIPPER'S ORDER", "SHIPPERS ORDER",
+  "TO BEARER", "BEARER", "TO THE BEARER",
+  "CONSIGNEE", "TO CONSIGNEE", "TO THE CONSIGNEE",
+  "NOTIFY PARTY", "NOTIFY", "AGENT",
+  "NO DATA", "NULL", "NOT APPLICABLE", "NOT AVAILABLE",
+  "UNIDENTIFIED", "UNSPECIFIED", "TBD", "TBC", "TBA",
+  "-", "--", ".", "N.A.", "NIL", "NONE STATED",
+];
+
+// Prefix patterns: any name STARTING WITH these is treated as placeholder
+const PLACEHOLDER_PREFIXES = [
+  "TO THE ORDER OF", "TO ORDER OF", "TO THE ORDER", "TO ORDER",
+  "ORDER OF", "AS PER", "SAME AS",
 ];
 
 // V17: Country → Region mapping
@@ -183,6 +196,7 @@ const VIET_MAP_DISPLAY = {
 };
 
 const SCHEMA_FIELDS = [
+  { key: "date",         label: "Date",              optional: true },
   { key: "productDesc",  label: "Product Description" },
   { key: "supplier",     label: "Supplier" },
   { key: "purchaser",    label: "Purchaser" },
@@ -342,8 +356,9 @@ function groupEntities(rows, nameCol, countryCol, prefix, extraPlaceholders) {
     const raw = String(r[nameCol] || "").trim();
     const country = String(r[countryCol] || "").trim();
     const rawUp = raw.toUpperCase();
-    // Check placeholder
-    const isPlh = !raw || phSet.has(rawUp);
+    // Check placeholder: exact match OR starts with a known order-type prefix
+    const isPlh = !raw || phSet.has(rawUp)
+      || PLACEHOLDER_PREFIXES.some(p => rawUp.startsWith(p));
     const normKey = isPlh ? "" : normalizeForKey(raw);
     return { idx: i, raw, country, normKey, isPlh };
   });
@@ -450,6 +465,8 @@ function isPlaceholder(rawName, stdName, extraList) {
   if (!rawNorm && !stdNorm) return "Blank/Missing";
   if (checkSet.has(rawNorm)) return rawNorm;
   if (checkSet.has(stdNorm)) return stdNorm;
+  if (PLACEHOLDER_PREFIXES.some(p => rawNorm.startsWith(p))) return rawNorm;
+  if (PLACEHOLDER_PREFIXES.some(p => stdNorm.startsWith(p))) return stdNorm;
   return null; // not a placeholder
 }
 
@@ -596,7 +613,7 @@ export default function ChemicalSegmentationTool() {
     return Object.keys(sheetData[yearSheets[0]][0] || {});
   }, [yearSheets, sheetData]);
 
-  const schemaComplete = useMemo(() => SCHEMA_FIELDS.every((f) => schema[f.key]), [schema]);
+  const schemaComplete = useMemo(() => SCHEMA_FIELDS.filter(f => !f.optional).every((f) => schema[f.key]), [schema]);
 
   /* ════════════════════════════════════
      STEP 0 — UPLOAD
@@ -618,6 +635,7 @@ export default function ChemicalSegmentationTool() {
         // Auto-detect schema
         const cols = Object.keys(data[yrs[0]][0] || {});
         const maps = {
+          date: ["date","ngày","transaction date","shipment date","invoice date","bill date","ngày tháng"],
           productDesc: ["product description","product desc","description","product","product name","hàng hóa","hang hoa"],
           supplier: ["supplier","exporter","seller","shipper","nhà cung cấp"],
           purchaser: ["purchaser","buyer","importer","consignee","người mua"],
@@ -733,8 +751,9 @@ export default function ChemicalSegmentationTool() {
           const up=toNum(r[schema.unitPrice]), tv=toNum(r[schema.totalValue]), q=toNum(r[schema.quantity]);
           if (up>0 && q>0 && tv>0) {
             const diff = Math.abs(up*q - tv);
-            r.Pre_Conversion_Value_Check = diff > 500 ? "Outlier" : "OK";
-            if (diff>500) flagged++;
+            const pctDiff = diff / tv;
+            r.Pre_Conversion_Value_Check = pctDiff > 0.30 ? "Outlier" : "OK";
+            if (pctDiff > 0.30) flagged++;
           } else { r.Pre_Conversion_Value_Check = "Insufficient_Data"; }
         });
         newData[yr] = rows;
@@ -1362,14 +1381,38 @@ export default function ChemicalSegmentationTool() {
         "Supplier_Is_Southeast_Asia", "Purchaser_Is_Southeast_Asia",
         "Research_Scope_Flag", "Final_Segment",
         "Industry", "Industry_Segment",
+        "Keyword_Match_Detail",
         "IQR_Segment_Check", "Pre_Conversion_Value_Check",
         "Supplier_Review_Status", "Purchaser_Review_Status",
       ]);
       const origCols = new Set(Object.values(schema).filter(Boolean));
+
+      // Column order: Date | Product Desc | Supplier | Purchaser | Country Origin | Purch Country | Unit Price | Qty | Unit | Total Value | computed cols
+      const ORDERED_ORIG = [
+        schema.date, schema.productDesc, schema.supplier, schema.purchaser,
+        schema.countryOrigin, schema.purchCountry,
+        schema.unitPrice, schema.quantity, schema.unit, schema.totalValue,
+      ].filter(Boolean);
+      const ORDERED_COMPUTED = [
+        "Supplier_Standardize", "Purchaser_Standardize",
+        "Supplier_Continent", "Purchaser_Continent",
+        "Supplier_Is_Southeast_Asia", "Purchaser_Is_Southeast_Asia",
+        "Research_Scope_Flag", "Final_Segment",
+        "Industry", "Industry_Segment",
+        "Keyword_Match_Detail",
+        "IQR_Segment_Check", "Pre_Conversion_Value_Check",
+        "Supplier_Review_Status", "Purchaser_Review_Status",
+      ];
+
       const slimRow = (r) => {
         const out = {};
+        // First: ordered original columns
+        ORDERED_ORIG.forEach(k => { if (k in r) out[k] = r[k]; });
+        // Then: computed audit columns
+        ORDERED_COMPUTED.forEach(k => { if (k in r) out[k] = r[k]; });
+        // Finally: any remaining original cols not in the ordered list
         for (const k of Object.keys(r)) {
-          if (origCols.has(k) || KEEP_COMPUTED.has(k)) out[k] = r[k];
+          if (origCols.has(k) && !(k in out)) out[k] = r[k];
         }
         return out;
       };
@@ -1417,7 +1460,11 @@ export default function ChemicalSegmentationTool() {
             {SCHEMA_FIELDS.map(f => (
               <div key={f.key}>
                 <label style={{display:"block",fontSize:11.5,fontWeight:700,color:"#475569",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.04em"}}>
-                  {f.label} {schema[f.key] ? " ✅" : " ⚠️"}
+                  {f.label}
+                  {f.optional
+                    ? <span style={{marginLeft:6,fontWeight:400,color:"#94a3b8",textTransform:"none"}}>(optional)</span>
+                    : null}
+                  {" "}{schema[f.key] ? "✅" : f.optional ? "➖" : "⚠️"}
                 </label>
                 <select value={schema[f.key]||""} onChange={e => setSchema(p=>({...p,[f.key]:e.target.value}))}
                   style={{width:"100%",padding:"11px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:"#fff",color:"#0f172a",fontSize:14,fontFamily:"inherit"}}>
