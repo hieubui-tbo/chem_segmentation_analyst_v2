@@ -1528,7 +1528,7 @@ export default function ChemicalSegmentationTool() {
         return <Card title="Pre-Conversion Value Validation" accent="#ef4444">
           {!validationLog ? <>
             <p style={{color:"#475569",marginBottom:16}}>
-              Flag rows where |UnitPrice × Quantity − TotalValue| &gt; $500 as outlier.
+              Flag rows where |UnitPrice × Quantity − TotalValue| / TotalValue &gt; 30% as outlier.
             </p>
             <Btn onClick={runValidation} disabled={processing}>{processing ? "Processing..." : "Run Validation"}</Btn>
           </> : <>
